@@ -43,18 +43,15 @@ class ContractCase(unittest.TestCase):
     def reject(self, teapot, exc_type, method_name, *args, **kwargs):
         """Проверяет ошибочную команду и неизменность полного состояния.
 
-        Возвращает пойманное исключение.
+        Снимок ``before`` копируется до вызова, а после отказа состояние
+        сверяется через :meth:`assert_state`, поэтому сравниваются не только
+        значения, но и точные типы полей. Возвращает пойманное исключение.
         """
         before = dict(teapot.get_state())
         method = getattr(teapot, method_name)
         with self.assertRaises(exc_type) as caught:
             method(*args, **kwargs)
-        after = teapot.get_state()
-        self.assertEqual(
-            after,
-            before,
-            "Ошибочная команда %s изменила состояние" % method_name,
-        )
+        self.assert_state(teapot, before)
         return caught.exception
 
     def assert_state(self, teapot, expected):

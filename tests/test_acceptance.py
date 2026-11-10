@@ -2,12 +2,15 @@
 
 Каждый сценарий выполняется на новом экземпляре ``TornadoTeapot``.
 Успешные команды обязаны возвращать ``None``; ошибочные команды
-проверяются с полным сравнением словаря ``get_state()`` до и после вызова.
+проверяются с полным сравнением словаря ``get_state()`` до и после вызова,
+включая точные типы значений. Отказы состояния и ресурсов выражаются
+доменными исключениями из ``tornado_errors``.
 """
 
 import unittest
 
 from tests.helpers import INITIAL_STATE, ContractCase
+from tornado_errors import InsufficientResourcesError, InvalidStateError
 
 
 class TestAcceptance(ContractCase):
@@ -28,14 +31,14 @@ class TestAcceptance(ContractCase):
         )
 
     def test_pt03_repeated_take_off(self):
-        """ПТ-03. Повторный взлёт вызывает RuntimeError без изменения состояния."""
+        """ПТ-03. Повторный взлёт вызывает InvalidStateError без изменения состояния."""
         teapot = self.make()
         self.command(teapot, "take_off")
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=10, energy=50, is_airborne=True),
         )
-        self.reject(teapot, RuntimeError, "take_off")
+        self.reject(teapot, InvalidStateError, "take_off")
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=10, energy=50, is_airborne=True),
@@ -87,7 +90,7 @@ class TestAcceptance(ContractCase):
         )
 
     def test_pt07_insufficient_energy(self):
-        """ПТ-07. Второе перемещение при energy=10 вызывает RuntimeError."""
+        """ПТ-07. Второе перемещение при energy=10 вызывает InsufficientResourcesError."""
         teapot = self.make()
         self.command(teapot, "take_off")
         self.command(teapot, "move", dx=20, dy=20)
@@ -102,7 +105,7 @@ class TestAcceptance(ContractCase):
                 is_airborne=True,
             ),
         )
-        self.reject(teapot, RuntimeError, "move", dx=10, dy=10)
+        self.reject(teapot, InsufficientResourcesError, "move", dx=10, dy=10)
         self.assert_state(
             teapot,
             dict(
@@ -126,7 +129,7 @@ class TestAcceptance(ContractCase):
         )
 
     def test_pt09_altitude_limit(self):
-        """ПТ-09. Подъём выше 100 м вызывает RuntimeError без изменения состояния."""
+        """ПТ-09. Подъём выше 100 м вызывает InvalidStateError без изменения состояния."""
         teapot = self.make()
         self.command(teapot, "take_off")
         for _ in range(3):
@@ -135,14 +138,14 @@ class TestAcceptance(ContractCase):
             teapot,
             dict(INITIAL_STATE, altitude=100, energy=32, is_airborne=True),
         )
-        self.reject(teapot, RuntimeError, "ascend", meters=1)
+        self.reject(teapot, InvalidStateError, "ascend", meters=1)
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=100, energy=32, is_airborne=True),
         )
 
     def test_pt10_descent_limit(self):
-        """ПТ-10. Снижение ниже 10 м вызывает RuntimeError без изменения состояния."""
+        """ПТ-10. Снижение ниже 10 м вызывает InvalidStateError без изменения состояния."""
         teapot = self.make()
         self.command(teapot, "take_off")
         self.command(teapot, "ascend", meters=10)
@@ -151,7 +154,7 @@ class TestAcceptance(ContractCase):
             teapot,
             dict(INITIAL_STATE, altitude=10, energy=48, is_airborne=True),
         )
-        self.reject(teapot, RuntimeError, "descend", meters=1)
+        self.reject(teapot, InvalidStateError, "descend", meters=1)
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=10, energy=48, is_airborne=True),
@@ -175,21 +178,21 @@ class TestAcceptance(ContractCase):
         )
 
     def test_pt12_cloud_too_low(self):
-        """ПТ-12. Поглощение облака на высоте 10 м вызывает RuntimeError."""
+        """ПТ-12. Поглощение облака на высоте 10 м вызывает InvalidStateError."""
         teapot = self.make()
         self.command(teapot, "take_off")
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=10, energy=50, is_airborne=True),
         )
-        self.reject(teapot, RuntimeError, "eat_cloud")
+        self.reject(teapot, InvalidStateError, "eat_cloud")
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=10, energy=50, is_airborne=True),
         )
 
     def test_pt13_cloud_limit(self):
-        """ПТ-13. Четвёртое облако вызывает RuntimeError без изменения состояния."""
+        """ПТ-13. Четвёртое облако вызывает InvalidStateError без изменения состояния."""
         teapot = self.make()
         self.command(teapot, "take_off")
         self.command(teapot, "ascend", meters=10)
@@ -205,7 +208,7 @@ class TestAcceptance(ContractCase):
                 is_airborne=True,
             ),
         )
-        self.reject(teapot, RuntimeError, "eat_cloud")
+        self.reject(teapot, InvalidStateError, "eat_cloud")
         self.assert_state(
             teapot,
             dict(
@@ -239,7 +242,7 @@ class TestAcceptance(ContractCase):
         )
 
     def test_pt15_portal_without_clouds(self):
-        """ПТ-15. Портал без двух облаков вызывает RuntimeError."""
+        """ПТ-15. Портал без двух облаков вызывает InsufficientResourcesError."""
         teapot = self.make()
         self.command(teapot, "take_off")
         self.command(teapot, "ascend", meters=20)
@@ -247,7 +250,7 @@ class TestAcceptance(ContractCase):
             teapot,
             dict(INITIAL_STATE, altitude=30, energy=46, is_airborne=True),
         )
-        self.reject(teapot, RuntimeError, "tornado_portal", dx=1, dy=1)
+        self.reject(teapot, InsufficientResourcesError, "tornado_portal", dx=1, dy=1)
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=30, energy=46, is_airborne=True),
@@ -272,21 +275,21 @@ class TestAcceptance(ContractCase):
         self.assert_state(teapot, dict(INITIAL_STATE, energy=100))
 
     def test_pt18_applause_in_air(self):
-        """ПТ-18. Аплодисменты в полёте вызывают RuntimeError."""
+        """ПТ-18. Аплодисменты в полёте вызывают InvalidStateError."""
         teapot = self.make()
         self.command(teapot, "take_off")
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=10, energy=50, is_airborne=True),
         )
-        self.reject(teapot, RuntimeError, "applause", count=2)
+        self.reject(teapot, InvalidStateError, "applause", count=2)
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, altitude=10, energy=50, is_airborne=True),
         )
 
     def test_pt19_take_off_without_energy(self):
-        """ПТ-19. Взлёт при energy=0 на земле вызывает RuntimeError."""
+        """ПТ-19. Взлёт при energy=0 на земле вызывает InsufficientResourcesError."""
         teapot = self.make()
         self.command(teapot, "take_off")
         self.command(teapot, "move", dx=20, dy=20)
@@ -296,7 +299,7 @@ class TestAcceptance(ContractCase):
             teapot,
             dict(INITIAL_STATE, x=30, y=20, altitude=0, energy=0),
         )
-        self.reject(teapot, RuntimeError, "take_off")
+        self.reject(teapot, InsufficientResourcesError, "take_off")
         self.assert_state(
             teapot,
             dict(INITIAL_STATE, x=30, y=20, altitude=0, energy=0),
@@ -314,13 +317,33 @@ class TestAcceptance(ContractCase):
         self.assert_state(second, INITIAL_STATE)
 
     def test_pt21_state_protection(self):
-        """ПТ-21. Изменение словаря get_state() не меняет внутреннее состояние."""
+        """ПТ-21. Снимки get_state() независимы и не меняются после команд."""
         teapot = self.make()
-        snapshot = teapot.get_state()
-        self.assertEqual(snapshot, INITIAL_STATE)
-        snapshot["energy"] = 0
-        self.assertIsNot(snapshot, teapot.get_state())
+        first = teapot.get_state()
+        second = teapot.get_state()
+        self.assertIsNot(first, second)
+        self.assertEqual(first, INITIAL_STATE)
+        self.assertEqual(second, INITIAL_STATE)
+        first["energy"] = 0
         self.assert_state(teapot, INITIAL_STATE)
+        self.assertEqual(second, INITIAL_STATE)
+        self.command(teapot, "take_off")
+        self.assertEqual(first, dict(INITIAL_STATE, energy=0))
+        self.assertEqual(second, INITIAL_STATE)
+        for snapshot in (first, second):
+            for key, value in snapshot.items():
+                expected_type = bool if key == "is_airborne" else int
+                self.assertIs(
+                    type(value),
+                    expected_type,
+                    "Значение %s в снимке должно иметь точный тип" % key,
+                )
+        expected = dict(INITIAL_STATE, altitude=10, energy=50, is_airborne=True)
+        self.assert_state(teapot, expected)
+        fresh = teapot.get_state()
+        self.assertIsNot(fresh, first)
+        self.assertIsNot(fresh, second)
+        self.assertEqual(fresh, expected)
 
     def test_pt22_portal_bounds(self):
         """ПТ-22. tornado_portal(101, 0) вызывает ValueError."""

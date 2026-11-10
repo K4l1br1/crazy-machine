@@ -11,10 +11,13 @@
 |---|---|
 | `README.md` | этот файл: запуск, API, пример полёта |
 | `SPEC.md` | техническое задание проекта № 3: ФТ-01–16, Н-01–03, ПТ-01–22 |
-| `TEST_CASES.md` | тест-кейсы: приёмочные ПТ-01–22 и дополнительные граничные ДТ-01–10 |
+| `TEST_CASES.md` | тест-кейсы: приёмочные ПТ-01–22 и дополнительные граничные ДТ-01–11 |
 | `TEST_PLAN.md` | план тестирования: уровни, окружение, порядок прогона, критерии |
 | `REVIEW.md` | журнал независимого ревью (заполняется рецензентами) |
+| [`REVIEW_Alzoabi.md`](REVIEW_Alzoabi.md) | ревью рецензента B: замечания B-01–B-03 |
+| [`REVIEW_crazy_machine_Agapov.md`](REVIEW_crazy_machine_Agapov.md) | ревью рецензента C: замечания C01–C03 |
 | `tests/` | автотесты `unittest`: `__init__.py`, `helpers.py`, `test_acceptance.py`, `test_boundaries.py` |
+| `tornado_errors.py` | доменные исключения: `TornadoTeapotError`, `InvalidStateError`, `InsufficientResourcesError` |
 | `tornado_teapot.py` | **планируется**: модуль с классом `TornadoTeapot`, появится после ревью |
 
 ## Требования к окружению
@@ -29,7 +32,7 @@
 Из корня репозитория:
 
 ```bash
-python -m compileall -q tests
+python -m compileall -q tests tornado_errors.py
 python -m unittest discover -s tests -t . -v
 ```
 
@@ -40,9 +43,13 @@ python -m unittest tests.test_acceptance -v
 python -m unittest tests.test_boundaries -v
 ```
 
-`compileall` проверяет синтаксис тестов. Discovery собирает **32 тест-метода**: 22 приёмочных
-(`test_pt01_*` … `test_pt22_*`) и 10 граничных (`test_dt01_*` … `test_dt10_*`). Пока модуля нет, каждый
+`compileall` проверяет синтаксис тестов. Discovery собирает **33 тест-метода**: 22 приёмочных
+(`test_pt01_*` … `test_pt22_*`) и 11 дополнительных (`test_dt01_*` … `test_dt11_*`). Пока модуля нет, каждый
 тест падает в `setUp` с `ModuleNotFoundError`.
+
+Дополнительные тесты проверяют, в частности, достижение `y = ±110` вместе с проверками `x = ±110` (ДТ-03),
+округление стоимости подъёма на соседних значениях `ascend(5)` и `ascend(6)` (ДТ-03) и пополнение запаса
+облаков после портала в том же полёте (ДТ-11).
 
 Общие помощники тестов (`tests/helpers.py`) задают начальное состояние
 `{'x': 0, 'y': 0, 'altitude': 0, 'energy': 60, 'clouds': 0, 'is_airborne': False}`,
@@ -54,6 +61,11 @@ python -m unittest tests.test_boundaries -v
 
 ```python
 from tornado_teapot import TornadoTeapot
+from tornado_errors import (
+    TornadoTeapotError,
+    InvalidStateError,
+    InsufficientResourcesError,
+)
 
 teapot = TornadoTeapot()
 ```
@@ -61,21 +73,29 @@ teapot = TornadoTeapot()
 Класс создаётся без обязательных аргументов. Все успешные команды изменения состояния возвращают
 `None`; состояние читается только через `get_state()`. Полные условия — в [`SPEC.md`](SPEC.md).
 
+Отказы по состоянию и ресурсам выражаются доменными исключениями из `tornado_errors.py`.
+`TornadoTeapotError` наследуется от `Exception` (не от `RuntimeError`), а `InvalidStateError`
+и `InsufficientResourcesError` — от `TornadoTeapotError`.
+
 | Метод | Аргументы | Действие | Исключения |
 |---|---|---|---|
-| `take_off()` | — | только с земли при `energy >= 10`: `altitude = 10`, `energy -= 10` | `RuntimeError`: не на земле или не хватает энергии |
-| `move(dx, dy)` | целые −20…20, не оба нуля | в полёте: `x += dx`, `y += dy`, `energy -= \|dx\| + \|dy\|`; высота не меняется | `ValueError`: тип, диапазон, нулевой вектор; `RuntimeError`: не в полёте, не хватает энергии |
-| `ascend(meters)` | целое 1…30 | в полёте: `altitude += meters` (не выше 100), `energy -= ceil(meters / 5)` | `ValueError`; `RuntimeError`: не в полёте, выход за 100, не хватает энергии |
-| `descend(meters)` | целое 1…30 | в полёте: `altitude -= meters`, но не ниже 10; энергия не тратится | `ValueError`; `RuntimeError`: не в полёте, результат ниже 10 |
-| `eat_cloud()` | — | в полёте при `altitude >= 20` и `clouds < 3`: `clouds += 1`, `energy += 15` (не выше 100) | `RuntimeError`: не в полёте, высота < 20, облаков уже 3 |
-| `tornado_portal(dx, dy)` | целые −100…100, не оба нуля | в полёте при `altitude >= 30`, `clouds >= 2`, `energy >= 25`: координаты сдвигаются, `energy -= 25`, `clouds -= 2`; высота не меняется | `ValueError`: тип, диапазон, нулевой вектор; `RuntimeError`: не в полёте, высота < 30, облаков < 2, энергии < 25 |
-| `land()` | — | из полёта: `altitude = 0`, `clouds = 0`, `is_airborne = False`; координаты и энергия сохраняются | `RuntimeError`: уже на земле |
-| `applause(count)` | целое 1…10 | только на земле: `energy += 5 × count` (не выше 100) | `ValueError`; `RuntimeError`: в полёте |
-| `get_state()` | — | возвращает **новый** словарь с ключами `x`, `y`, `altitude`, `energy`, `clouds`, `is_airborne` | — |
+| `take_off()` | — | только с земли при `energy >= 10`: `altitude = 10`, `energy -= 10` | `InvalidStateError`: не на земле; `InsufficientResourcesError`: не хватает энергии |
+| `move(dx, dy)` | целые −20…20, не оба нуля | в полёте: `x += dx`, `y += dy`, `energy -= \|dx\| + \|dy\|`; высота не меняется | `ValueError`: тип, диапазон, нулевой вектор; `InvalidStateError`: не в полёте; `InsufficientResourcesError`: не хватает энергии |
+| `ascend(meters)` | целое 1…30 | в полёте: `altitude += meters` (не выше 100), `energy -= ceil(meters / 5)` | `ValueError`; `InvalidStateError`: не в полёте, выход за 100; `InsufficientResourcesError`: не хватает энергии |
+| `descend(meters)` | целое 1…30 | в полёте: `altitude -= meters`, но не ниже 10; энергия не тратится | `ValueError`; `InvalidStateError`: не в полёте, результат ниже 10 |
+| `eat_cloud()` | — | в полёте при `altitude >= 20` и `clouds < 3`: `clouds += 1`, `energy += 15` (не выше 100) | `InvalidStateError`: не в полёте, высота < 20, облаков уже 3 |
+| `tornado_portal(dx, dy)` | целые −100…100, не оба нуля | в полёте при `altitude >= 30`, `clouds >= 2`, `energy >= 25`: координаты сдвигаются, `energy -= 25`, `clouds -= 2`; высота не меняется | `ValueError`: тип, диапазон, нулевой вектор; `InvalidStateError`: не в полёте, высота < 30; `InsufficientResourcesError`: облаков < 2 или энергии < 25 |
+| `land()` | — | из полёта: `altitude = 0`, `clouds = 0`, `is_airborne = False`; координаты и энергия сохраняются | `InvalidStateError`: уже на земле |
+| `applause(count)` | целое 1…10 | только на земле: `energy += 5 × count` (не выше 100) | `ValueError`; `InvalidStateError`: в полёте |
+| `get_state()` | — | возвращает **новый независимый** словарь с ключами `x`, `y`, `altitude`, `energy`, `clouds`, `is_airborne`; ранее выданный снимок не изменяется последующими командами | — |
 
 Порядок проверок фиксирован ТЗ (ФТ-15): сначала корректность аргументов (`ValueError`), затем
-допустимость состояния, затем достаточность ресурсов (`RuntimeError`). Тексты исключений не
-нормируются, поэтому тесты их не сверяют.
+допустимость состояния (`InvalidStateError`), затем достаточность ресурсов
+(`InsufficientResourcesError`). При конфликте состояния и ресурсов приоритет у `InvalidStateError`.
+Тексты исключений не нормируются, поэтому тесты их не сверяют.
+
+`clouds` — текущий расходуемый запас поглощённых, но ещё не израсходованных облаков. Портал тратит два
+облака, после чего запас можно снова пополнять в том же полёте; суммарного лимита поглощений за полёт нет.
 
 ## Пример полёта
 

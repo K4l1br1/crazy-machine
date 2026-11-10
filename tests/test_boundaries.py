@@ -1,13 +1,15 @@
-"""Граничные дополнительные тест-кейсы ДТ-01---ДТ-10 (см. TEST_PLAN.md).
+"""Граничные дополнительные тест-кейсы ДТ-01---ДТ-11 (см. TEST_PLAN.md).
 
 Все состояния подготавливаются только публичными командами ТЗ:
 take_off(), move(dx, dy), ascend(meters), descend(meters), eat_cloud(),
 tornado_portal(dx, dy), land(), applause(count). Внутренние поля и атрибуты
 объекта не читаются и не изменяются. Ожидаемые состояния сравниваются
 полными словарями get_state() с точными типами скалярных значений.
+Ошибки состояния и ресурсов проверяются доменными типами из tornado_errors.
 """
 
 from tests.helpers import ContractCase, INITIAL_STATE
+from tornado_errors import InsufficientResourcesError, InvalidStateError
 
 
 def state_of(x, y, altitude, energy, clouds, is_airborne):
@@ -20,6 +22,13 @@ def state_of(x, y, altitude, energy, clouds, is_airborne):
         "clouds": clouds,
         "is_airborne": is_airborne,
     }
+
+
+def shift(axis, sign, distance):
+    """Вектор перемещения вдоль оси ``axis`` с учётом знака."""
+    if axis == "x":
+        return (sign * distance, 0)
+    return (0, sign * distance)
 
 
 BAD_NUMERIC_VALUES = (
@@ -40,7 +49,7 @@ BAD_NUMERIC_VALUES = (
 
 
 class TestBoundaries(ContractCase):
-    """ДТ-01---ДТ-10: типы, диапазоны, приоритет ошибок, ресурсы и инварианты."""
+    """ДТ-01---ДТ-11: типы, диапазоны, приоритет ошибок, ресурсы и инварианты."""
 
     def _portal_ready(self, teapot):
         """Подготовка портала: (0, 0), altitude=30, clouds=2, energy=76."""
@@ -198,6 +207,22 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "ascend", 1)
             self.assert_state(teapot, state_of(0, 0, 11, 49, 0, True))
 
+        with self.subTest(method="ascend", argument="meters", value=5,
+                          condition="airborne altitude=10 energy=50 "
+                                    "(lower rounding step ceil(5/5)=1)"):
+            teapot = self.make()
+            self.command(teapot, "take_off")
+            self.command(teapot, "ascend", 5)
+            self.assert_state(teapot, state_of(0, 0, 15, 49, 0, True))
+
+        with self.subTest(method="ascend", argument="meters", value=6,
+                          condition="airborne altitude=10 energy=50 "
+                                    "(lower rounding step ceil(6/5)=2)"):
+            teapot = self.make()
+            self.command(teapot, "take_off")
+            self.command(teapot, "ascend", 6)
+            self.assert_state(teapot, state_of(0, 0, 16, 48, 0, True))
+
         with self.subTest(method="ascend", argument="meters", value=30,
                           condition="airborne altitude=10 energy=50"):
             teapot = self.make()
@@ -231,54 +256,37 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "descend", 30)
             self.assert_state(teapot, state_of(0, 0, 10, 44, 0, True))
 
-        with self.subTest(method="move", argument="total x", value=110,
-                          condition="three flight cycles with applause refills"):
-            teapot = self.make()
-            for method, args in (
-                ("take_off", ()),
-                ("move", (20, 0)),
-                ("move", (20, 0)),
-                ("land", ()),
-                ("applause", (10,)),
-                ("take_off", ()),
-                ("move", (20, 0)),
-                ("move", (20, 0)),
-                ("land", ()),
-                ("applause", (10,)),
-                ("take_off", ()),
-                ("move", (20, 0)),
-                ("move", (10, 0)),
-                ("land", ()),
-            ):
-                self.command(teapot, method, *args)
-            self.assert_state(teapot, state_of(110, 0, 0, 20, 0, False))
-
-        with self.subTest(method="move", argument="total x", value=-110,
-                          condition="three flight cycles with applause refills"):
-            teapot = self.make()
-            for method, args in (
-                ("take_off", ()),
-                ("move", (-20, 0)),
-                ("move", (-20, 0)),
-                ("land", ()),
-                ("applause", (10,)),
-                ("take_off", ()),
-                ("move", (-20, 0)),
-                ("move", (-20, 0)),
-                ("land", ()),
-                ("applause", (10,)),
-                ("take_off", ()),
-                ("move", (-20, 0)),
-                ("move", (-10, 0)),
-                ("land", ()),
-            ):
-                self.command(teapot, method, *args)
-            self.assert_state(teapot, state_of(-110, 0, 0, 20, 0, False))
+        for axis, sign in (("x", 1), ("x", -1), ("y", 1), ("y", -1)):
+            target = (110 * sign, 0) if axis == "x" else (0, 110 * sign)
+            with self.subTest(method="move", argument="total %s" % axis,
+                              value=target,
+                              condition="three flight cycles with applause "
+                                        "refills"):
+                teapot = self.make()
+                for method, args in (
+                    ("take_off", ()),
+                    ("move", shift(axis, sign, 20)),
+                    ("move", shift(axis, sign, 20)),
+                    ("land", ()),
+                    ("applause", (10,)),
+                    ("take_off", ()),
+                    ("move", shift(axis, sign, 20)),
+                    ("move", shift(axis, sign, 20)),
+                    ("land", ()),
+                    ("applause", (10,)),
+                    ("take_off", ()),
+                    ("move", shift(axis, sign, 20)),
+                    ("move", shift(axis, sign, 10)),
+                    ("land", ()),
+                ):
+                    self.command(teapot, method, *args)
+                self.assert_state(teapot, state_of(
+                    target[0], target[1], 0, 20, 0, False))
 
     # ------------------------------------------------------------------
-    # ДТ-04. Приоритет ValueError над RuntimeError
+    # ДТ-04. Приоритет ValueError, затем состояния, затем ресурсов
     # ------------------------------------------------------------------
-    def test_dt04_value_error_before_runtime_error(self):
+    def test_dt04_validation_priority(self):
         cases = (
             ("ground altitude=0", "move", (21, 0)),
             ("ground altitude=0", "move", (0, 0)),
@@ -342,6 +350,28 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "move", 6, 6)
             self.reject(teapot, ValueError, "tornado_portal", 0, 0)
 
+        with self.subTest(method="tornado_portal", argument="dx, dy",
+                          value=(1, 1),
+                          condition="altitude=29 energy=6 clouds=0 "
+                                    "(state before resources)"):
+            teapot = self.make()
+            self.command(teapot, "take_off")
+            self.command(teapot, "ascend", 19)
+            self.command(teapot, "move", 20, 20)
+            self.assert_state(teapot, state_of(20, 20, 29, 6, 0, True))
+            self.reject(teapot, InvalidStateError, "tornado_portal", 1, 1)
+
+        with self.subTest(method="ascend", argument="meters", value=1,
+                          condition="altitude=100 energy=0 "
+                                    "(state before resources)"):
+            teapot = self.make()
+            self.command(teapot, "take_off")
+            for _ in range(3):
+                self.command(teapot, "ascend", 30)
+            self.command(teapot, "move", 16, 16)
+            self.assert_state(teapot, state_of(16, 16, 100, 0, 0, True))
+            self.reject(teapot, InvalidStateError, "ascend", 1)
+
     # ------------------------------------------------------------------
     # ДТ-05. Запреты состояний и пороги высоты 19/20, 29/30
     # ------------------------------------------------------------------
@@ -357,20 +387,20 @@ class TestBoundaries(ContractCase):
             with self.subTest(method=method, args=args,
                               condition="ground altitude=0 energy=60"):
                 teapot = self.make()
-                self.reject(teapot, RuntimeError, method, *args)
+                self.reject(teapot, InvalidStateError, method, *args)
 
         with self.subTest(method="land", args=(), condition="ground after landing"):
             teapot = self.make()
             self.command(teapot, "take_off")
             self.command(teapot, "land")
-            self.reject(teapot, RuntimeError, "land")
+            self.reject(teapot, InvalidStateError, "land")
             self.assert_state(teapot, state_of(0, 0, 0, 50, 0, False))
 
         with self.subTest(method="applause", argument="count", value=1,
                           condition="airborne altitude=10"):
             teapot = self.make()
             self.command(teapot, "take_off")
-            self.reject(teapot, RuntimeError, "applause", 1)
+            self.reject(teapot, InvalidStateError, "applause", 1)
             self.assert_state(teapot, state_of(0, 0, 10, 50, 0, True))
 
         with self.subTest(method="eat_cloud", argument="-", value="altitude=19",
@@ -378,7 +408,7 @@ class TestBoundaries(ContractCase):
             teapot = self.make()
             self.command(teapot, "take_off")
             self.command(teapot, "ascend", 9)
-            self.reject(teapot, RuntimeError, "eat_cloud")
+            self.reject(teapot, InvalidStateError, "eat_cloud")
             self.assert_state(teapot, state_of(0, 0, 19, 48, 0, True))
 
         with self.subTest(method="eat_cloud", argument="-", value="altitude=20",
@@ -397,7 +427,8 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "ascend", 20)
             self.command(teapot, "eat_cloud")
             self.assert_state(teapot, state_of(0, 0, 30, 61, 1, True))
-            self.reject(teapot, RuntimeError, "tornado_portal", 1, 1)
+            self.reject(teapot, InsufficientResourcesError,
+                        "tornado_portal", 1, 1)
             self.assert_state(teapot, state_of(0, 0, 30, 61, 1, True))
 
         with self.subTest(method="tornado_portal", argument="dx, dy",
@@ -407,7 +438,7 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "ascend", 19)
             self.command(teapot, "eat_cloud")
             self.command(teapot, "eat_cloud")
-            self.reject(teapot, RuntimeError, "tornado_portal", 1, 1)
+            self.reject(teapot, InvalidStateError, "tornado_portal", 1, 1)
             self.assert_state(teapot, state_of(0, 0, 29, 76, 2, True))
 
         with self.subTest(method="tornado_portal", argument="dx, dy",
@@ -440,7 +471,7 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "move", 20, 20)
             self.command(teapot, "move", 1, 0)
             self.command(teapot, "land")
-            self.reject(teapot, RuntimeError, "take_off")
+            self.reject(teapot, InsufficientResourcesError, "take_off")
             self.assert_state(teapot, state_of(21, 20, 0, 9, 0, False))
 
         with self.subTest(method="move", argument="dx, dy", value=(20, 20),
@@ -457,7 +488,7 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "take_off")
             self.command(teapot, "move", 5, 5)
             self.command(teapot, "move", 1, 0)
-            self.reject(teapot, RuntimeError, "move", 20, 20)
+            self.reject(teapot, InsufficientResourcesError, "move", 20, 20)
             self.assert_state(teapot, state_of(6, 5, 10, 39, 0, True))
 
         with self.subTest(method="ascend", argument="meters", value=11,
@@ -475,7 +506,7 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "take_off")
             self.command(teapot, "move", 20, 20)
             self.command(teapot, "move", 4, 4)
-            self.reject(teapot, RuntimeError, "ascend", 11)
+            self.reject(teapot, InsufficientResourcesError, "ascend", 11)
             self.assert_state(teapot, state_of(24, 24, 10, 2, 0, True))
 
         with self.subTest(method="tornado_portal", argument="dx, dy",
@@ -495,7 +526,8 @@ class TestBoundaries(ContractCase):
             self._portal_ready(teapot)
             self.command(teapot, "move", 20, 20)
             self.command(teapot, "move", 6, 6)
-            self.reject(teapot, RuntimeError, "tornado_portal", 1, 1)
+            self.reject(teapot, InsufficientResourcesError,
+                        "tornado_portal", 1, 1)
             self.assert_state(teapot, state_of(26, 26, 30, 24, 2, True))
 
     # ------------------------------------------------------------------
@@ -544,10 +576,10 @@ class TestBoundaries(ContractCase):
             self.command(teapot, "move", 11, 11)
             self.command(teapot, "move", 1, 0)
             self.assert_state(teapot, state_of(32, 31, 20, 0, 1, True))
-            self.reject(teapot, RuntimeError, "move", 1, 0)
+            self.reject(teapot, InsufficientResourcesError, "move", 1, 0)
             self.command(teapot, "descend", 10)
             self.assert_state(teapot, state_of(32, 31, 10, 0, 1, True))
-            self.reject(teapot, RuntimeError, "descend", 1)
+            self.reject(teapot, InvalidStateError, "descend", 1)
             self.command(teapot, "land")
             self.assert_state(teapot, state_of(32, 31, 0, 0, 0, False))
 
@@ -611,24 +643,38 @@ class TestBoundaries(ContractCase):
     # ------------------------------------------------------------------
     def test_dt10_deterministic_sequence_and_invariants(self):
         scenario = (
-            ("command", "take_off", (), state_of(0, 0, 10, 50, 0, True)),
-            ("command", "move", (7, -3), state_of(7, -3, 10, 40, 0, True)),
-            ("command", "ascend", (9,), state_of(7, -3, 19, 38, 0, True)),
-            ("reject", "eat_cloud", (), state_of(7, -3, 19, 38, 0, True)),
-            ("command", "ascend", (1,), state_of(7, -3, 20, 37, 0, True)),
-            ("command", "eat_cloud", (), state_of(7, -3, 20, 52, 1, True)),
-            ("command", "eat_cloud", (), state_of(7, -3, 20, 67, 2, True)),
-            ("reject", "tornado_portal", (-15, 20),
+            ("command", None, "take_off", (),
+             state_of(0, 0, 10, 50, 0, True)),
+            ("command", None, "move", (7, -3),
+             state_of(7, -3, 10, 40, 0, True)),
+            ("command", None, "ascend", (9,),
+             state_of(7, -3, 19, 38, 0, True)),
+            ("reject", InvalidStateError, "eat_cloud", (),
+             state_of(7, -3, 19, 38, 0, True)),
+            ("command", None, "ascend", (1,),
+             state_of(7, -3, 20, 37, 0, True)),
+            ("command", None, "eat_cloud", (),
+             state_of(7, -3, 20, 52, 1, True)),
+            ("command", None, "eat_cloud", (),
              state_of(7, -3, 20, 67, 2, True)),
-            ("command", "ascend", (10,), state_of(7, -3, 30, 65, 2, True)),
-            ("command", "eat_cloud", (), state_of(7, -3, 30, 80, 3, True)),
-            ("command", "tornado_portal", (-15, 20),
+            ("reject", InvalidStateError, "tornado_portal", (-15, 20),
+             state_of(7, -3, 20, 67, 2, True)),
+            ("command", None, "ascend", (10,),
+             state_of(7, -3, 30, 65, 2, True)),
+            ("command", None, "eat_cloud", (),
+             state_of(7, -3, 30, 80, 3, True)),
+            ("command", None, "tornado_portal", (-15, 20),
              state_of(-8, 17, 30, 55, 1, True)),
-            ("command", "descend", (20,), state_of(-8, 17, 10, 55, 1, True)),
-            ("command", "land", (), state_of(-8, 17, 0, 55, 0, False)),
-            ("command", "applause", (3,), state_of(-8, 17, 0, 70, 0, False)),
-            ("command", "take_off", (), state_of(-8, 17, 10, 60, 0, True)),
-            ("command", "move", (-1, 1), state_of(-9, 18, 10, 58, 0, True)),
+            ("command", None, "descend", (20,),
+             state_of(-8, 17, 10, 55, 1, True)),
+            ("command", None, "land", (),
+             state_of(-8, 17, 0, 55, 0, False)),
+            ("command", None, "applause", (3,),
+             state_of(-8, 17, 0, 70, 0, False)),
+            ("command", None, "take_off", (),
+             state_of(-8, 17, 10, 60, 0, True)),
+            ("command", None, "move", (-1, 1),
+             state_of(-9, 18, 10, 58, 0, True)),
         )
 
         first = self.make()
@@ -636,12 +682,13 @@ class TestBoundaries(ContractCase):
         self.assert_state(first, dict(INITIAL_STATE))
         self.assert_state(second, dict(INITIAL_STATE))
 
-        for index, (action, method, args, expected) in enumerate(scenario, start=1):
+        for index, (action, exc_type, method, args, expected) in enumerate(
+                scenario, start=1):
             with self.subTest(step=index, method=method, args=args,
                               condition="two independent instances"):
                 if action == "reject":
-                    self.reject(first, RuntimeError, method, *args)
-                    self.reject(second, RuntimeError, method, *args)
+                    self.reject(first, exc_type, method, *args)
+                    self.reject(second, exc_type, method, *args)
                 else:
                     self.command(first, method, *args)
                     self.command(second, method, *args)
@@ -665,3 +712,29 @@ class TestBoundaries(ContractCase):
 
         with self.subTest(step="final", method="get_state", value="equal states"):
             self.assertEqual(first.get_state(), second.get_state())
+
+    # ------------------------------------------------------------------
+    # ДТ-11. Пополнение текущего запаса облаков после портала
+    # ------------------------------------------------------------------
+    def test_dt11_clouds_replenish_after_portal(self):
+        teapot = self.make()
+
+        steps = (
+            ("take_off", (), state_of(0, 0, 10, 50, 0, True)),
+            ("ascend", (20,), state_of(0, 0, 30, 46, 0, True)),
+            ("eat_cloud", (), state_of(0, 0, 30, 61, 1, True)),
+            ("eat_cloud", (), state_of(0, 0, 30, 76, 2, True)),
+            ("eat_cloud", (), state_of(0, 0, 30, 91, 3, True)),
+            ("tornado_portal", (1, 1), state_of(1, 1, 30, 66, 1, True)),
+            ("eat_cloud", (), state_of(1, 1, 30, 81, 2, True)),
+            ("tornado_portal", (1, 1), state_of(2, 2, 30, 56, 0, True)),
+            ("eat_cloud", (), state_of(2, 2, 30, 71, 1, True)),
+            ("eat_cloud", (), state_of(2, 2, 30, 86, 2, True)),
+            ("eat_cloud", (), state_of(2, 2, 30, 100, 3, True)),
+        )
+
+        for index, (method, args, expected) in enumerate(steps, start=1):
+            with self.subTest(step=index, method=method, args=args,
+                              condition="clouds replenish after portal"):
+                self.command(teapot, method, *args)
+                self.assert_state(teapot, expected)

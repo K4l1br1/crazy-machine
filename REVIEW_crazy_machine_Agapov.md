@@ -87,9 +87,9 @@ t.move(1, 0)  # перемещение на земле
 
 | ID | Решение автора: принять / отклонить / отложить | Обоснование или ссылка на исправление | Повторная проверка |
 | --- | --- | --- | --- |
-| C01 | — | — | Ожидается |
-| C02 | — | — | Ожидается |
-| C03 | — | — | Ожидается |
+| C01 | принято; 10.11.2026 | `clouds` — текущий расходуемый запас, а не суммарный счётчик; после портала запас пополняется в том же полёте без общего лимита. Исправления: [SPEC.md](SPEC.md) §4.1 и ФТ-08, [TEST_CASES.md](TEST_CASES.md) ДТ-11, [tests/test_boundaries.py](tests/test_boundaries.py) `test_dt11_clouds_replenish_after_portal`. | Ожидается |
+| C02 | принято; 10.11.2026 | В [TEST_CASES.md](TEST_CASES.md) ДТ-03 добавлены независимые подслучаи `ascend(5)` → `altitude = 15`, `energy = 49` и `ascend(6)` → `altitude = 16`, `energy = 48`; проверка в [tests/test_boundaries.py](tests/test_boundaries.py) `test_dt03_*`. | Ожидается |
+| C03 | принято; 10.11.2026 | Введён [tornado_errors.py](tornado_errors.py): `TornadoTeapotError`, `InvalidStateError`, `InsufficientResourcesError`; `ValueError` оставлен для аргументов, описан порядок и приоритет проверок. Исправления: [SPEC.md](SPEC.md) ФТ-14/ФТ-15, [TEST_CASES.md](TEST_CASES.md) §1 и столбцы «Исключение», [TEST_PLAN.md](TEST_PLAN.md) §1/§4, тесты в `tests/`. | Ожидается |
 
 После ответа автора необходимо проверить принятые исправления. Закрывать замечания и считать ревью завершённым до этого не следует.
 
