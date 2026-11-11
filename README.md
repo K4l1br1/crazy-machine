@@ -18,7 +18,8 @@
 | [`REVIEW_crazy_machine_Agapov.md`](REVIEW_crazy_machine_Agapov.md) | ревью рецензента C: замечания C01–C03 |
 | `tests/` | автотесты `unittest`: `__init__.py`, `helpers.py`, `test_acceptance.py`, `test_boundaries.py` |
 | `tornado_errors.py` | доменные исключения: `TornadoTeapotError`, `InvalidStateError`, `InsufficientResourcesError` |
-| `tornado_teapot.py` | **планируется**: модуль с классом `TornadoTeapot`, появится после ревью |
+| `tornado_teapot.py` | **реализован** (роль D, ветка `feat/sinitsina`): модуль с классом `TornadoTeapot` |
+| `BUGREPORT.md` | журнал вопросов разработчика D к ТЗ и тестам |
 
 ## Требования к окружению
 
@@ -44,8 +45,8 @@ python -m unittest tests.test_boundaries -v
 ```
 
 `compileall` проверяет синтаксис тестов. Discovery собирает **33 тест-метода**: 22 приёмочных
-(`test_pt01_*` … `test_pt22_*`) и 11 дополнительных (`test_dt01_*` … `test_dt11_*`). Пока модуля нет, каждый
-тест падает в `setUp` с `ModuleNotFoundError`.
+(`test_pt01_*` … `test_pt22_*`) и 11 дополнительных (`test_dt01_*` … `test_dt11_*`).
+Все 33 теста проходят после реализации `tornado_teapot.py`.
 
 Дополнительные тесты проверяют, в частности, достижение `y = ±110` вместе с проверками `x = ±110` (ДТ-03),
 округление стоимости подъёма на соседних значениях `ascend(5)` и `ascend(6)` (ДТ-03) и пополнение запаса
@@ -99,7 +100,7 @@ teapot = TornadoTeapot()
 
 ## Пример полёта
 
-Воспроизводимый сценарий из приложения Б ТЗ. Выполняется после появления `tornado_teapot.py`.
+Воспроизводимый сценарий из приложения Б ТЗ.
 
 ```python
 from tornado_teapot import TornadoTeapot
